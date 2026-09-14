@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.ingestion.loader import documents
 
 from src.db.database import get_session
 
@@ -10,6 +11,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.include_router(documents)
 
 @app.get("/health")
 async def health() -> dict[str, str]:

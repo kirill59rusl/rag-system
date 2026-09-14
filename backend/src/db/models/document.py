@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import DateTime, String, Text, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
@@ -65,4 +65,14 @@ class Document(Base):
     chunks: Mapped[list["Chunk"]] = relationship(  # type: ignore[call-arg]
         back_populates="document",
         cascade="all, delete-orphan",
+    )
+
+    storage_path: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+
+    doc_metadata: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict
     )
