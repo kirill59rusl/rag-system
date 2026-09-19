@@ -7,10 +7,11 @@ Create Date: 2026-09-14 18:19:38.231602
 """
 from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
-
 import pgvector.sqlalchemy
+import sqlalchemy as sa
+from alembic import op
+
+from src.core.config import settings
 
 # revision identifiers, used by Alembic.
 revision: str = '60a34b464052'
@@ -40,7 +41,7 @@ def upgrade() -> None:
     sa.Column('content', sa.Text(), nullable=False),
     sa.Column('page_number', sa.Integer(), nullable=True),
     sa.Column('metadata', sa.JSON(), nullable=True),
-    sa.Column('embedding', pgvector.sqlalchemy.vector.VECTOR(dim=1536), nullable=True),
+    sa.Column('embedding', pgvector.sqlalchemy.vector.VECTOR(dim=settings.embedding_space), nullable=True),
     sa.ForeignKeyConstraint(['document_id'], ['documents.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )

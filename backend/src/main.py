@@ -2,9 +2,9 @@
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.ingestion.loader import documents
 
 from src.db.database import get_session
+from src.ingestion.loader import documents
 
 app = FastAPI(
     title="RAG API",

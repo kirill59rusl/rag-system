@@ -2,11 +2,11 @@ import uuid
 from pathlib import Path
 
 import aiofiles
-from fastapi import UploadFile, HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
-from src.db.models.document import Document, DocumentStatus
+from src.db.models import Chunk, Document, DocumentStatus
 
 
 async def save_uploaded_file(file: UploadFile, doc_id: uuid.UUID) -> str:
@@ -27,7 +27,7 @@ async def save_uploaded_file(file: UploadFile, doc_id: uuid.UUID) -> str:
             if size > settings.max_upload_size:
                 await out_file.close()
                 storage_path.unlink(missing_ok=True)
-                raise HTTPException(400, "File too large")
+                raise HTTPException(400, "Файл слишком большой")
             await out_file.write(chunk)
 
     return str(storage_path)

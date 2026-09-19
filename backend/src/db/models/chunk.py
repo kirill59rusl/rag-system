@@ -1,13 +1,13 @@
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Integer, JSON, Text
+from sqlalchemy import JSON, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from src.core.config import settings
 from src.db.base import Base
 
-
-EMBEDDING_DIMENSION = 1536
+EMBEDDING_DIMENSION = settings.embedding_space
 
 
 class Chunk(Base):
