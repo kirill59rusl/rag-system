@@ -53,3 +53,10 @@ class Chunk(Base):
     document: Mapped["Document"] = relationship(  # type: ignore[call-arg]
         back_populates="chunks",
     )
+
+    def as_dict(self):
+        return {
+            "doc_id": self.document_id,
+            "page_number": self.page_number,
+            "content": self.content
+        }

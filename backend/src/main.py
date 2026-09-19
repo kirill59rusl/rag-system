@@ -1,10 +1,10 @@
 
 from fastapi import FastAPI
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.database import get_session
 from src.ingestion.loader import documents
+from src.retrieval.query import retrieval
 
 app = FastAPI(
     title="RAG API",
@@ -12,6 +12,7 @@ app = FastAPI(
 )
 
 app.include_router(documents)
+app.include_router(retrieval)
 
 @app.get("/health")
 async def health() -> dict[str, str]:
