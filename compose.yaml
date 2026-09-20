@@ -1,25 +1,81 @@
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/rag
+  # По умолчанию Ollama на хосте; для контейнерного Ollama: OLLAMA_HOST=http://ollama:11434
+  OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+  UPLOAD_DIR: /app/data/uploads
+  EMBEDDER: ${EMBEDDER:-embeddinggemma}
+  LLM: ${LLM:-qwen3:4b}
+
+x-host-gateway: &host-gateway
+  - "host.docker.internal:host-gateway"
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: rag-postgres
-
     environment:
       POSTGRES_DB: rag
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-
     ports:
-      - "5432:5432"
-
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d rag"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  migrate:
+    build: ./backend
+    container_name: rag-migrate
+    command: ["alembic", "upgrade", "head"]
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build: ./backend
+    container_name: rag-backend
+    environment: *backend-env
+    extra_hosts: *host-gateway
+    ports:
+      - "8000:8000"
+    volumes:
+      - uploads_data:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---- Ollama в контейнере: только с `docker compose --profile docker-ollama up -d`
+  # ---- (и тогда задайте OLLAMA_HOST=http://ollama:11434 в .env)
+  ollama:
+    profiles: ["docker-ollama"]
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    dns: [1.1.1.1, 8.8.8.8]
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 volumes:
   postgres_data:
+  ollama_data:
+  uploads_data:

@@ -64,7 +64,7 @@ def load_pdf(path: str) -> list[dict]:
         text=clean_text(text)
 
         if not text.strip():
-            return
+            continue
 
         pages.append({
             "page_number": page_number,

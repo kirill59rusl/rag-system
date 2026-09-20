@@ -22,7 +22,7 @@ async def process_document(
         pages=load_pdf(document.storage_path)
         chunks=chunk_text(pages)
 
-        embeddings=embedding_model.embed(texts=[x["text"] for x in chunks])
+        embeddings=await embedding_model.embed(texts=[x["text"] for x in chunks])
         
         for index, (chunk, embedding) in enumerate(
             zip(chunks, embeddings)

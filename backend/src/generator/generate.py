@@ -52,7 +52,7 @@ async def generate(
     
     prompt = build_prompt(similar,query)
     
-    response=model.generate(
+    response=await model.generate(
         prompt=prompt,
         format=LLMResponse.model_json_schema()
     )
