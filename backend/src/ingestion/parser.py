@@ -24,20 +24,37 @@ _PUNCT_REPEAT = re.compile(r"([!?.,;:—-])\1{2,}")
 
 _EMPTY_BRACKETS = re.compile(r"\(\s*\)|\[\s*\]|\{\s*\}")
 
-def clean_text(text:str) -> str:
+def clean_text(text:str, keep_newlines: bool=False) -> str:
     if not text:
-        return text
+        return ""
 
     for k, v in _REPLACEMENTS.items():
         text = text.replace(k, v)
-        
-    text = _CONTROL_CHARS.sub("", text)
-    
-    text = _PUA_CHARS.sub("", text)
-    
-    text = unicodedata.normalize("NFKC", text)
-    return text
 
+    text = _CONTROL_CHARS.sub("", text)
+
+    text = _PUA_CHARS.sub("", text)
+
+    text = unicodedata.normalize("NFKC", text)
+
+    text = _HYPHEN_BREAK.sub(r"\1\2", text)
+
+    text = _JUNK_INLINE.sub("", text)
+
+    text = _EMPTY_BRACKETS.sub("", text)
+
+    if keep_newlines:
+        text = re.sub(r"[ \t\r\f\v]+", " ", text)
+        text = re.sub(r"\n\s*\n+", "\n", text)   
+        text = re.sub(r" *\n *", "\n", text) 
+    else:
+        text = _WS.sub(" ", text)
+
+    text = _PUNCT_REPEAT.sub(r"\1", text)
+
+    text = text.strip()
+
+    return text
 def load_pdf(path: str) -> list[dict]:
     reader=PdfReader(path)
     pages=[]

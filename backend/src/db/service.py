@@ -3,6 +3,7 @@ from pathlib import Path
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -51,3 +52,22 @@ async def create_document(
     await session.commit()
     await session.refresh(document)
     return document
+
+async def find_similar(
+    session: AsyncSession,
+    query_embedding: list[float],
+    limit: int
+) -> list[dict]:
+    distance=Chunk.embedding.cosine_distance(query_embedding)
+    
+    chunks =(
+        select(Chunk, distance)
+        .order_by(distance.asc())
+        .limit(limit)
+    )
+    
+    rows = (await session.execute(chunks)).all()
+    result = [{**chunk.as_dict(), "distance": float(dist)}
+                for chunk,dist in rows]
+
+    return result

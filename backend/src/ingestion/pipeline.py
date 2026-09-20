@@ -7,7 +7,7 @@ from src.ingestion.parser import load_pdf
 from src.retrieval.embedding import OllamaEmbedding
 
 embedding_model=OllamaEmbedding(
-        model="embeddinggemma",
+        model=settings.embedder,
         dimension=settings.embedding_space
     )
 

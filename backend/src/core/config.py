@@ -6,8 +6,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
 
 class Settings(BaseSettings):
+    embedder: str = "embeddinggemma"
     embedding_space: int = 768
     database_url: str
+    llm: str ="qwen3:4b"  
 
     class Config:
         env_file = BASE_DIR / "backend" / ".env"
