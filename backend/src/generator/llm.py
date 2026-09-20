@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from typing import Any
 
 import ollama
 
@@ -7,7 +7,7 @@ import ollama
 class LLM(ABC):
 
     @abstractmethod
-    def generate(self, prompt:str) -> str:
+    def generate(self, prompt:str, format: dict[str, Any] | None = None) -> str:
         ...
     
     #@abstractmethod
@@ -23,9 +23,13 @@ class OllamaLLM(LLM):
         self.model=model
         self.client = ollama.Client(host=host) if host else ollama
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, format: dict[str, Any] | None = None) -> str:
         response=self.client.generate(
             model=self.model,
-            prompt=prompt
+            prompt=prompt,
+            format=format,
+            options={
+                "think": True
+            }
         )
-        return response["response"]
+        return response["thinking"]
