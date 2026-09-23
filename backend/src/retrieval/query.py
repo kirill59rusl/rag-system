@@ -1,27 +1,22 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
 from src.db.database import get_session
-from src.db.models import Chunk
 from src.db.service import find_similar
-from src.retrieval.embedding import OllamaEmbedding
-
-embedding_model=OllamaEmbedding(
-    model=settings.embedder,
-    dimension=settings.embedding_space
-)
+from src.retrieval.dependencies import get_embedding_model
+from src.retrieval.embedding import EmbeddingModel
 
 retrieval=APIRouter(prefix="/retrieval", tags=["query"])
 
 SessionDep=Annotated[AsyncSession, Depends(get_session)]    
+EmbeddingDep = Annotated[EmbeddingModel, Depends(get_embedding_model)]
 
 async def get_similar(
     query: str,
     session: AsyncSession,
+    embedding_model: EmbeddingModel,
     limit
 ):
     query_embedding=await embedding_model.embed_one(query)
@@ -31,6 +26,7 @@ async def get_similar(
 async def get_relevant(
     query: str,
     session: SessionDep,
+    embedding_model: EmbeddingDep,
     limit: int = 5
 ):
-    return await get_similar(query,session,limit)
+    return await get_similar(query,session,embedding_model,limit)

@@ -3,20 +3,18 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
 from src.db.database import get_session
-from src.generator.llm import OllamaLLM
+from src.generator.dependencies import get_llm
+from src.generator.llm import LLM
 from src.generator.prompt import build_prompt
-from src.retrieval.query import get_similar
+from src.retrieval.embedding import EmbeddingModel
+from src.retrieval.query import EmbeddingDep, get_similar
 from src.schemas.llmresponse import Claim, LLMResponse
-
-model=OllamaLLM(
-    model=settings.llm,
-)
 
 llm=APIRouter(prefix="/llm", tags=["llm"])
 
 SessionDep=Annotated[AsyncSession, Depends(get_session)]
+LLMDep = Annotated[LLM, Depends(get_llm)]
 
 def build_sources(
     similar: list[dict],
@@ -46,15 +44,15 @@ def build_sources(
     return sources
 
 async def generate(
-    query: str, session: AsyncSession, limit: int
+    query: str, session: AsyncSession, limit: int, llm: LLM, embedding_model: EmbeddingModel
 ):
-    similar=await get_similar(session=session, query=query, limit=limit)
+    similar=await get_similar(session=session, query=query, embedding_model=embedding_model, limit=limit)
     
     prompt = build_prompt(similar,query)
     
-    response=await model.generate(
+    response=await llm.generate(
         prompt=prompt,
-        format=LLMResponse.model_json_schema()
+        response_format=LLMResponse.model_json_schema()
     )
 
     result = LLMResponse.model_validate_json(response)
@@ -76,10 +74,14 @@ async def generate(
 async def ask(
     session: SessionDep,
     query: str,
+    llm: LLMDep,
+    embedding_model: EmbeddingDep,
     limit: int = 5
 ):
    return await generate(
     session=session,
     query=query,
+    llm=llm,
+    embedding_model=embedding_model,
     limit=limit
    )

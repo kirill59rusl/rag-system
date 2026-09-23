@@ -1,13 +1,21 @@
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/rag
-  # По умолчанию Ollama на хосте; для контейнерного Ollama: OLLAMA_HOST=http://ollama:11434
-  OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
-  UPLOAD_DIR: /app/data/uploads
-  EMBEDDER: ${EMBEDDER:-embeddinggemma}
-  LLM: ${LLM:-qwen3:4b}
 
-x-host-gateway: &host-gateway
-  - "host.docker.internal:host-gateway"
+  EMBEDDER_PROVIDER: ${EMBEDDER_PROVIDER:-gigachat}
+  EMBEDDER: ${EMBEDDER:-Embeddings}
+  EMBEDDING_SPACE: ${EMBEDDING_SPACE:-1024}
+
+  LLM_PROVIDER: ${LLM_PROVIDER:-gigachat}
+  LLM: ${LLM:-GigaChat-2}
+
+  GIGACHAT_CREDENTIALS: ${GIGACHAT_CREDENTIALS:-}
+
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+
+  UPLOAD_DIR: /app/data/uploads
+
 
 services:
   postgres:
@@ -42,25 +50,29 @@ services:
     build: ./backend
     container_name: rag-backend
     environment: *backend-env
-    extra_hosts: *host-gateway
     ports:
       - "8000:8000"
     volumes:
       - uploads_data:/app/data/uploads
+    dns: [77.88.8.8, 188.93.16.19, 1.1.1.1, 8.8.8.8]
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
-  # ---- Ollama в контейнере: только с `docker compose --profile docker-ollama up -d`
-  # ---- (и тогда задайте OLLAMA_HOST=http://ollama:11434 в .env)
   ollama:
     profiles: ["docker-ollama"]
     image: ollama/ollama:latest
@@ -74,6 +86,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
 
 volumes:
   postgres_data:

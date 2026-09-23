@@ -4,16 +4,13 @@ from src.core.config import settings
 from src.db.models import Chunk, Document, DocumentStatus
 from src.ingestion.chunker import chunk_text
 from src.ingestion.parser import load_pdf
-from src.retrieval.embedding import OllamaEmbedding
+from src.retrieval.embedding import EmbeddingModel
 
-embedding_model=OllamaEmbedding(
-        model=settings.embedder,
-        dimension=settings.embedding_space
-    )
 
 async def process_document(
     document: Document,
-    session: AsyncSession
+    session: AsyncSession,
+    embedding_model: EmbeddingModel
 ):
     try:
         document.status=DocumentStatus.PROCESSING
