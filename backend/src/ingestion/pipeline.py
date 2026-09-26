@@ -1,6 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
 from src.db.models import Chunk, Document, DocumentStatus
 from src.ingestion.chunker import chunk_text
 from src.ingestion.parser import load_pdf

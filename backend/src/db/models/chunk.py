@@ -1,7 +1,7 @@
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, ForeignKey, Integer, Text
+from sqlalchemy import JSON, ForeignKey, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.config import settings
@@ -12,6 +12,10 @@ EMBEDDING_DIMENSION = settings.embedding_space
 
 class Chunk(Base):
     __tablename__ = "chunks"
+
+    __table_args__ = (
+        UniqueConstraint("document_id", "chunk_index", name="uq_chunk_doc_idx"),
+    )
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True,
@@ -54,9 +58,11 @@ class Chunk(Base):
         back_populates="chunks",
     )
 
-    def as_dict(self):
+    def as_dict(self) -> dict:
         return {
-            "doc_id": self.document_id,
+            "chunk_id": str(self.id),
+            "doc_id": str(self.document_id),
+            "chunk_index": self.chunk_index,
             "page_number": self.page_number,
-            "content": self.content
+            "content": self.content,
         }

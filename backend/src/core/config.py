@@ -14,11 +14,16 @@ class Settings(BaseSettings):
 
     llm_provider: str 
     llm: str  
+
+    judge: str
+    
     gigachat_credentials: str | None = None
 
     openai_api_key: str | None = None
     openai_base_url: str | None = None
 
+
+    eval_dataset_path: Path = BASE_DIR / "app" / "src" / "evaluation" / "dataset.json"   
     upload_dir: Path = BASE_DIR / "data" / "uploads"
     max_upload_size: int = 50 * 1024 * 1024  # 50 MB
     allowed_content_types: set[str] = {

@@ -1,5 +1,6 @@
 import uuid
 from pathlib import Path
+from uuid import UUID
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
@@ -71,3 +72,43 @@ async def find_similar(
                 for chunk,dist in rows]
 
     return result
+
+async def get_chunk(
+    session: AsyncSession,
+    doc_id: uuid.UUID,
+    chunk_idx: int,
+) -> Chunk | None:
+    stmt = select(Chunk).where(
+        Chunk.document_id == doc_id,
+        Chunk.chunk_index == chunk_idx,
+    )
+
+    chunk=await session.scalar(stmt)
+    return chunk
+
+async def get_chunks(
+    session: AsyncSession,
+    document_ids: list[UUID] | None = None,
+    limit: int | None = None,
+) -> list[Chunk]:
+    
+    stmt = select(Chunk).order_by(Chunk.document_id, Chunk.chunk_index)
+
+    if document_ids:
+        stmt = stmt.where(Chunk.document_id.in_(document_ids))
+
+    if limit:
+        stmt = stmt.limit(limit)
+
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_chunks_as_dicts(
+    session: AsyncSession,
+    document_ids: list[UUID] | None = None,
+    limit: int | None = None,
+) -> list[dict]:
+
+    chunks = await get_chunks(session, document_ids=document_ids, limit=limit)
+    return [chunk.as_dict() for chunk in chunks]

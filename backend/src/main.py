@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from src.db.database import get_session
+from src.evaluation.chunks import chunks
+from src.evaluation.router import evaluation
 from src.generator.generate import llm
 from src.ingestion.loader import documents
 from src.retrieval.query import retrieval
@@ -15,6 +17,8 @@ app = FastAPI(
 app.include_router(documents)
 app.include_router(retrieval)
 app.include_router(llm)
+app.include_router(chunks)
+app.include_router(evaluation)
 
 @app.get("/health")
 async def health() -> dict[str, str]:

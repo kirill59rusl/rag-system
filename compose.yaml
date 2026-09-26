@@ -8,6 +8,8 @@ x-backend-env: &backend-env
   LLM_PROVIDER: ${LLM_PROVIDER:-gigachat}
   LLM: ${LLM:-GigaChat-2}
 
+  JUDGE: ${JUDGE:-}
+
   GIGACHAT_CREDENTIALS: ${GIGACHAT_CREDENTIALS:-}
 
   OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
