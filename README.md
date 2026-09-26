@@ -166,6 +166,29 @@ uv run alembic upgrade head
 uv run alembic downgrade -1
 ```
 
+##
+
+результаты:
+
+baseline( retrieval limit = 3 )
+  "correct": 32,
+  "partial": 15,
+  "incorrect": 3,
+  "accuracy": 0.64,
+  "grounded_rate": 0.7,
+  "avg_page_recall": 0.9270833333333334,
+  "avg_text_recall": 0.90625
+
+baseline( retrieval limit = 5 )
+  "correct": 32,
+  "partial": 17,
+  "incorrect": 1,
+  "accuracy": 0.64,
+  "grounded_rate": 0.72,
+  "avg_page_recall": 0.96875,
+  "avg_text_recall": 0.96875,
+
+
 ## TODO
 
 в порядке убывающей важности.
