@@ -17,13 +17,13 @@
 | API | FastAPI, Uvicorn, Pydantic |
 | БД | PostgreSQL 16 + pgvector, SQLAlchemy 2 (async, asyncpg), Alembic |
 | Ингест | pypdf, langchain-text-splitters (чанки 1000 символов, перекрытие 200) |
-| Модели | Ollama: эмбеддинги `embeddinggemma` (768 измерений), LLM `qwen3:4b` |
+| Модели | emb: voyage-4, llm: Deepseek v4.1 Flash |
 | Инфраструктура | Docker Compose, uv |
 
 ## Архитектура
 
 ```
-upload ─► parser ─► chunker ─► embedding (Ollama) ─► Postgres (chunks + vector)
+upload ─► parser ─► chunker ─► embedding ─► Postgres (chunks + vector)
 
 query ─► embedding ─► top-k search ─► prompt ─► LLM ─► answer + claims + sources
 ```
@@ -39,57 +39,25 @@ query ─► embedding ─► top-k search ─► prompt ─► LLM ─► answe
 │       ├── main.py               # приложение FastAPI
 │       ├── core/config.py        # настройки (pydantic-settings)
 │       ├── db/                   # модели, сессия, миграции, запросы
+│       ├── evaluation/           # валидация
 │       ├── ingestion/            # загрузка, парсинг, чанкинг, пайплайн
 │       ├── retrieval/            # эмбеддинги и поиск
 │       ├── generator/            # промпт, LLM-клиент, эндпоинт генерации
 │       └── schemas/              # Pydantic-схемы
-├── eval/                         # оценка качества (пока заготовка)
 └── frontend/                     # пока пусто
 ```
 
-## Требования
+## Быстрый старт
 
-- Docker и Docker Compose
-- [Ollama](https://ollama.com) на хосте (для GPU или быстрой работы на CPU; контейнерный вариант описан ниже)
-- ~8 ГБ RAM, лучше 16 (для `qwen3:4b` нужно 3-4 ГБ)
-- [uv](https://docs.astral.sh/uv/) и Python 3.12, если запускаете backend без Docker
 
-## Быстрый старт (backend в контейнере, Ollama на хосте)
-
-**1. Запустите Ollama и скачайте модели**
-
-```bash
-sudo systemctl enable --now ollama   # или просто `ollama serve`
-ollama pull embeddinggemma
-ollama pull qwen3:4b
-```
-
-**2. Разрешите Ollama принимать соединения из контейнеров.** По умолчанию он слушает только `127.0.0.1`:
-
-```bash
-sudo systemctl edit ollama
-```
-
-```ini
-[Service]
-Environment="OLLAMA_HOST=0.0.0.0:11434"
-```
-
-```bash
-sudo systemctl restart ollama
-```
-
-> Так Ollama становится доступен из локальной сети без авторизации. В недоверенных сетях ограничьте порт 11434 файрволом.
-
-**3. Запустите проект**
+**1. Запустите проект**
 
 ```bash
 docker compose up -d --build
 ```
 
-миграции после бд
 
-**4. Документация fastapi**
+**2. Документация fastapi**
 
 Интерактивная документация: <http://localhost:8000/docs>
 
@@ -110,11 +78,25 @@ curl -X POST "http://localhost:8000/llm/generate?query=что такое RAG&lim
 
 ```json
 {
-  "answer": "…",
-  "claims": [{"text": "…", "sources": [1, 3]}],
+  "answer": "Согласно руководству, чтобы включить станок, необходимо нажать зелёную кнопку «Пуск», расположенную на шкафу управления. Перед этим по пошаговой инструкции следует установить режущий инструмент на шпиндель, отключив напряжение станка. После включения станка нужно включить компьютер и запустить программу NC Studio.",
+  "claims": [
+    {
+      "text": "Для включения станка нужно нажать кнопку «Пуск» зелёного цвета, расположенную на шкафу управления.",
+      "sources": [
+        1
+      ]
+    }  
+    ...
+  ],
   "sources": [
-    {"id": 1, "doc_id": "…", "page_number": 4},
-    {"id": 3, "doc_id": "…", "page_number": 7}
+    {
+      "id": 1,
+      "chunk_id": "74f35463-57aa-4182-90c4-c5d946f6c2a0",
+      "doc_id": "37bf11ec-d142-4f88-aab7-3e72d5f24988",
+      "chunk_index": 41,
+      "page_number": 29,
+      "used": true
+    }...
   ]
 }
 ```
@@ -125,16 +107,6 @@ curl -X POST "http://localhost:8000/llm/generate?query=что такое RAG&lim
 
 остальные настройки, такие как используемые модели, размер векторного пространства можно найти в `/backend/core/config`
 
-## Ollama в контейнере (вместо хостового)
-
-```bash
-echo "OLLAMA_HOST=http://ollama:11434" >> .env
-docker compose --profile docker-ollama up -d --build
-docker compose exec ollama ollama pull embeddinggemma
-docker compose exec ollama ollama pull qwen3:4b
-```
-
-Для GPU NVIDIA добавьте в сервис `ollama` секцию `deploy.resources.reservations.devices` (нужен `nvidia-container-toolkit`).
 
 ## Локальная разработка (backend на хосте)
 
