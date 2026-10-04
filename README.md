@@ -160,8 +160,27 @@ baseline( retrieval limit = 5 )
   "avg_page_recall": 0.96875,
   "avg_text_recall": 0.96875,
 
+reranker limit=10  reranker_limit=3
+  "total": 50,
+  "correct": 31,
+  "partial": 18,
+  "incorrect": 1,
+  "accuracy": 0.62,
+  "grounded_rate": 0.76,
+  "avg_page_recall": 1,
+  "avg_text_recall": 1,
+  
+reranker 10 5
+  "total": 50,
+  "correct": 35,
+  "partial": 15,
+  "incorrect": 0,
+  "accuracy": 0.7,
+  "grounded_rate": 0.72,
+  "avg_page_recall": 1,
+  "avg_text_recall": 1,
 
 ## TODO
 
 в порядке убывающей важности.
-добавить eval, попробовать reranker, сделать поддержку разных документов, добавить фронтенд
+сделать поддержку разных документов, добавить фронтенд
