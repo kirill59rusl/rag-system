@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_base_url: str | None = None
 
+    reranker_provider: str | None = None
+    reranker: str | None = None
 
     eval_dataset_path: Path = BASE_DIR / "app" / "src" / "evaluation" / "dataset.json"   
     upload_dir: Path = BASE_DIR / "data" / "uploads"

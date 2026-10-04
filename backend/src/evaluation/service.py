@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.generator.generate import generate as rag_generate
 from src.generator.llm import LLM
+from src.retrieval.reranking.reranker import Reranker
 from src.schemas.evaluation import EvalCaseResult, EvalSummary, JudgeVerdict
 
 JUDGE_PROMPT = """Ты — эксперт, оценивающий ответы RAG-системы по технической документации.
@@ -101,13 +102,17 @@ async def run_case(
     session: AsyncSession,
     llm: LLM,
     embedding_model: str,
+    reranker: Reranker | None,
     limit: int,
+    reranker_limit: int
 ) -> EvalCaseResult:
     result = await rag_generate(
         query=case["question"],
         session=session,
         limit=limit,
         llm=llm,
+        reranker=reranker,
+        reranker_limit=reranker_limit,
         embedding_model=embedding_model,
         debug=True,
     )
@@ -142,7 +147,9 @@ async def run_evaluation(
     session: AsyncSession,
     llm: LLM,
     embedding_model: str,
+    reranker: Reranker | None,
     limit: int = 5,
+    reranker_limit: int = 5,
     question_types: list[str] | None = None,
     ids: list[str] | None = None,
     sample_limit: int | None = None,
@@ -157,7 +164,7 @@ async def run_evaluation(
         dataset = dataset[:sample_limit]
 
     results = [
-        await run_case(case, session, llm, embedding_model, limit)
+        await run_case(case, session, llm, embedding_model, reranker,  limit, reranker_limit)
         for case in dataset
     ]
 

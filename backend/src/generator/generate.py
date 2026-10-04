@@ -1,19 +1,23 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.database import get_session
 from src.generator.dependencies import get_llm
 from src.generator.llm import LLM
 from src.generator.prompt import build_prompt
+from src.retrieval.dependencies import get_reranker
 from src.retrieval.query import EmbeddingDep, get_similar
+from src.retrieval.reranking.reranker import Reranker
 from src.schemas.llmresponse import Claim, GenerateResponse, LLMResponse, Source
 
 llm=APIRouter(prefix="/llm", tags=["llm"])
 
 SessionDep=Annotated[AsyncSession, Depends(get_session)]
 LLMDep = Annotated[LLM, Depends(get_llm)]
+RerankerDep = Annotated[Reranker, Depends(get_reranker)]
 
 def build_sources(similar, used_ids, with_content: bool) -> list[Source]:
     result = []
@@ -37,9 +41,9 @@ def clean_claims(claims: list[Claim], n_sources: int) -> list[Claim]:
     ]
 
 
-async def generate(query, session, limit, llm, embedding_model, debug=False) -> GenerateResponse:
+async def generate(query, session, limit, reranker_limit, llm, embedding_model, reranker, debug=False) -> GenerateResponse:
     similar = await get_similar(
-        session=session, query=query, embedding_model=embedding_model, limit=limit
+        session=session, query=query, embedding_model=embedding_model, limit=limit, reranker_limit=reranker_limit, reranker=reranker
     )
     response = await llm.generate(
         prompt=build_prompt(similar, query),
@@ -58,7 +62,7 @@ async def generate(query, session, limit, llm, embedding_model, debug=False) -> 
 
 
 @llm.post("/generate", response_model=GenerateResponse, response_model_exclude_none=True)
-async def ask(session: SessionDep, query: str, llm: LLMDep,
-              embedding_model: EmbeddingDep, limit: int = 5, debug: bool = False):
-    return await generate(query=query, session=session, limit=limit, llm=llm,
-                          embedding_model=embedding_model, debug=debug)
+async def ask(session: SessionDep, query: str, llm: LLMDep, reranker: RerankerDep,
+              embedding_model: EmbeddingDep, limit: int = 5, reranker_limit: int = 5, debug: bool = False):
+    return await generate(query=query, session=session, limit=limit, reranker_limit=reranker_limit, llm=llm,
+                          embedding_model=embedding_model, reranker=reranker, debug=debug)

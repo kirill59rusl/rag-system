@@ -8,7 +8,9 @@ from src.evaluation.judge import get_judge
 from src.evaluation.service import run_evaluation
 from src.generator.dependencies import get_llm
 from src.generator.llm import LLM
+from src.retrieval.dependencies import get_reranker
 from src.retrieval.query import EmbeddingDep
+from src.retrieval.reranking.reranker import Reranker
 from src.schemas.evaluation import EvalSummary
 
 evaluation = APIRouter(prefix="/eval", tags=["eval"])
@@ -16,13 +18,16 @@ evaluation = APIRouter(prefix="/eval", tags=["eval"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 LLMDep = Annotated[LLM, Depends(get_llm)]
 JudgeDep = Annotated[LLM, Depends(get_judge)]
+RerankerDep = Annotated[Reranker, Depends(get_reranker)]
 
 @evaluation.post("/run", response_model=EvalSummary)
 async def run(
     session: SessionDep,
     llm: LLMDep,
     embedding_model: EmbeddingDep,
+    reranker: RerankerDep,
     limit: int = 5,
+    reranker_limit: int = 5,
     sample_limit: int | None = None,
     question_types: Annotated[list[str] | None, Query()] = None,
 ):
@@ -38,6 +43,8 @@ async def run(
         llm=llm,
         embedding_model=embedding_model,
         limit=limit,
+        reranker_limit=reranker_limit,
+        reranker=reranker,
         question_types=question_types,
         sample_limit=sample_limit,
     )

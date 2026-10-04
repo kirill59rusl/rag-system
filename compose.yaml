@@ -15,6 +15,8 @@ x-backend-env: &backend-env
   OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
 
+  RERANKER_PROVIDER: ${RERANKER_PROVIDER:-}
+  RERANKER: ${RERANKER:-}
 
   UPLOAD_DIR: /app/data/uploads
 
