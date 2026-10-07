@@ -3,11 +3,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.db.database import get_session
-from src.db.service import find_similar
+from src.db.service import find_similar, get_known_versions
 from src.retrieval.dependencies import get_embedding_model, get_reranker
 from src.retrieval.embedding import EmbeddingModel
 from src.retrieval.reranking.reranker import Reranker
+from src.retrieval.versions import detect_versions
 
 retrieval=APIRouter(prefix="/retrieval", tags=["query"])
 
@@ -16,14 +18,39 @@ EmbeddingDep = Annotated[EmbeddingModel, Depends(get_embedding_model)]
 
 RerankerDep = Annotated[Reranker | None, Depends(get_reranker)]
 
-async def get_similar(query, session, embedding_model, limit, reranker_limit, reranker=None):
-    query_embedding = await embedding_model.embed_one(query)
+async def _search(query, query_embedding, session, limit, reranker_limit, reranker, version=None):
     if reranker is None:
-        return await find_similar(session, query_embedding, limit)
+        return await find_similar(session, query_embedding, limit, version)
     candidates = await find_similar(
-        session, query_embedding, max(reranker_limit, limit)
+        session, query_embedding, max(reranker_limit, limit), version
     )
     return await reranker.rerank(query, candidates, reranker_limit)
+
+
+async def get_similar(query, session, embedding_model, limit, reranker_limit, reranker=None):
+    query_embedding = await embedding_model.embed_one(query)
+    versions = []
+    if settings.version_filter:
+        versions = detect_versions(query, await get_known_versions(session))
+    if not versions:
+        return await _search(query, query_embedding, session, limit, reranker_limit, reranker)
+
+    # несколько версий (вопрос-сравнение) — делим выдачу поровну, чтобы каждая была в контексте
+    results = []
+    for i, version in enumerate(versions):
+        results += await _search(
+            query, query_embedding, session,
+            _share(limit, len(versions), i), _share(reranker_limit, len(versions), i),
+            reranker, version,
+        )
+    return results
+
+
+def _share(total, n, i):
+    """i-я доля при делении total на n частей: 5 на 2 -> 3, 2."""
+    if total is None:
+        return None
+    return total // n + (i < total % n)
 
 @retrieval.post("/search")
 async def get_relevant(

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     reranker_provider: str | None = None
     reranker: str | None = None
 
+    # искать только в версиях документации, упомянутых в вопросе
+    version_filter: bool = True
+
     eval_dataset_path: Path = BASE_DIR / "app" / "src" / "evaluation" / "dataset" / "dataset.jsonl"
     upload_dir: Path = BASE_DIR / "data" / "uploads"
     max_upload_size: int = 50 * 1024 * 1024  # 50 MB

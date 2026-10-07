@@ -23,6 +23,7 @@ class Source(BaseModel):
     content: str | None = None
     distance: float | None = None
     used: bool = False
+    version: str | None = None
 
 
 class GenerateResponse(BaseModel):

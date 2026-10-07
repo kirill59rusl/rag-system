@@ -1,3 +1,4 @@
+import re
 import uuid
 from pathlib import Path
 from uuid import UUID
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.db.models import Chunk, Document, DocumentStatus
+
+_VERSION_IN_FILENAME = re.compile(r"postgresql-(\d+)", re.IGNORECASE)
 
 
 async def save_uploaded_file(file: UploadFile, doc_id: uuid.UUID) -> str:
@@ -35,9 +38,15 @@ async def save_uploaded_file(file: UploadFile, doc_id: uuid.UUID) -> str:
     return str(storage_path)
 
 
+def version_from_filename(filename: str | None) -> str | None:
+    match = _VERSION_IN_FILENAME.search(filename or "")
+    return match.group(1) if match else None
+
+
 async def create_document(
     session: AsyncSession,
     file: UploadFile,
+    version: str | None = None,
 ) -> Document:
     doc_id = uuid.uuid4()
     storage_path = await save_uploaded_file(file, doc_id)
@@ -48,6 +57,7 @@ async def create_document(
         content_type=file.content_type,
         storage_path=storage_path,
         status=DocumentStatus.PENDING,
+        version=version or version_from_filename(file.filename),
     )
     session.add(document)
     await session.commit()
@@ -57,21 +67,31 @@ async def create_document(
 async def find_similar(
     session: AsyncSession,
     query_embedding: list[float],
-    limit: int
+    limit: int,
+    version: str | None = None,
 ) -> list[dict]:
     distance=Chunk.embedding.cosine_distance(query_embedding)
     
     chunks =(
-        select(Chunk, distance)
+        select(Chunk, Document.version, distance)
+        .join(Document, Chunk.document_id == Document.id)
         .order_by(distance.asc())
         .limit(limit)
     )
+    if version is not None:
+        chunks = chunks.where(Document.version == version)
     
     rows = (await session.execute(chunks)).all()
-    result = [{**chunk.as_dict(), "distance": float(dist)}
-                for chunk,dist in rows]
+    result = [{**chunk.as_dict(), "version": version, "distance": float(dist)}
+                for chunk,version, dist in rows]
 
     return result
+
+async def get_known_versions(session: AsyncSession) -> set[str]:
+    rows = await session.scalars(
+        select(Document.version).where(Document.version.is_not(None)).distinct()
+    )
+    return set(rows)
 
 async def get_chunk(
     session: AsyncSession,

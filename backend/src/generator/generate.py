@@ -34,6 +34,7 @@ def build_sources(similar, used_ids, with_content: bool) -> list[Source]:
             content=d["content"] if with_content else None,
             distance=d["distance"] if with_content else None,
             used=(i in used_ids),
+            version=d.get("version"),
         ))
     return result
 
