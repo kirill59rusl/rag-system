@@ -4,6 +4,7 @@ x-backend-env: &backend-env
   EMBEDDER_PROVIDER: ${EMBEDDER_PROVIDER:-gigachat}
   EMBEDDER: ${EMBEDDER:-Embeddings}
   EMBEDDING_SPACE: ${EMBEDDING_SPACE:-1024}
+  EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-128}
 
   LLM_PROVIDER: ${LLM_PROVIDER:-gigachat}
   LLM: ${LLM:-GigaChat-2}

@@ -61,7 +61,8 @@ def load_pdf(path: str) -> list[dict]:
 
     for page_number, page in enumerate(reader.pages,start=1):
         text=page.extract_text() or ""
-        text=clean_text(text)
+        
+        text=clean_text(text, keep_newlines=True)
 
         if not text.strip():
             continue
@@ -71,3 +72,39 @@ def load_pdf(path: str) -> list[dict]:
             "text": text
         })
     return pages
+
+
+def load_outline(path: str) -> list[dict]:
+    """Закладки PDF (оглавление) в виде плоского списка разделов.
+
+    Возвращает [{"title", "level", "page_number"}] в порядке документа,
+    либо пустой список, если закладок нет.
+    """
+    reader=PdfReader(path)
+    sections=[]
+
+    def walk(items, level):
+        for item in items:
+            if isinstance(item, list):
+                walk(item, level + 1)
+                continue
+            try:
+                page_index=reader.get_destination_page_number(item)
+            except Exception:
+                continue
+            if page_index is None or page_index < 0:
+                continue
+            title=clean_text(item.title or "")
+            if title:
+                sections.append({
+                    "title": title,
+                    "level": level,
+                    "page_number": page_index + 1,
+                })
+
+    try:
+        walk(reader.outline, 1)
+    except Exception:
+        return []
+
+    return sections

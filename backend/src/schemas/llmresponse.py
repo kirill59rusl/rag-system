@@ -17,6 +17,9 @@ class Source(BaseModel):
     doc_id: str
     chunk_index: int
     page_number: int | None
+    page_end: int | None = None
+    section: str | None = None
+    section_path: list[str] = Field(default_factory=list)
     content: str | None = None
     distance: float | None = None
     used: bool = False

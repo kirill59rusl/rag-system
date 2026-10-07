@@ -15,6 +15,7 @@ def get_embedding_model() -> EmbeddingModel:
         return OllamaEmbedding(
             model=settings.embedder,
             dimension=settings.embedding_space,
+            batch_size=settings.embed_batch_size,
         )
 
     if settings.embedder_provider == "gigachat":
@@ -22,11 +23,13 @@ def get_embedding_model() -> EmbeddingModel:
             credentials=settings.gigachat_credentials,
             model=settings.embedder,
             dimension=settings.embedding_space,
+            batch_size=settings.embed_batch_size,
         )
     if settings.embedder_provider == "openai":           
         return OpenAIEmbedding(
             model=settings.embedder,
             dimension=settings.embedding_space,
+            batch_size=settings.embed_batch_size,
             base_url=settings.openai_base_url,
             api_key=settings.openai_api_key,
         )

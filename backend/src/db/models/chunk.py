@@ -59,10 +59,14 @@ class Chunk(Base):
     )
 
     def as_dict(self) -> dict:
+        meta = self.metadata_ or {}
         return {
             "chunk_id": str(self.id),
             "doc_id": str(self.document_id),
             "chunk_index": self.chunk_index,
             "page_number": self.page_number,
+            "page_end": meta.get("page_end"),
+            "section": meta.get("section"),
+            "section_path": meta.get("section_path") or [],
             "content": self.content,
         }

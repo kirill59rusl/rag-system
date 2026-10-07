@@ -6,8 +6,19 @@ from openai import AsyncOpenAI
 
 
 class EmbeddingModel(ABC):
+    # Провайдеры ограничивают число текстов в одном запросе (у Voyage — 1000),
+    # поэтому embed() режет вход на пачки, а запрос к API делает _embed_batch().
+    batch_size: int = 128
+
     @abstractmethod
-    async def embed(self, texts: list[str]) -> list[list[float]]: ...
+    async def _embed_batch(self, texts: list[str]) -> list[list[float]]: ...
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        embeddings: list[list[float]] = []
+        for start in range(0, len(texts), self.batch_size):
+            batch = texts[start:start + self.batch_size]
+            embeddings.extend(await self._embed_batch(batch))
+        return embeddings
 
     @property
     @abstractmethod
@@ -22,13 +33,15 @@ class EmbeddingModel(ABC):
 class OllamaEmbedding(EmbeddingModel):
     def __init__(
         self, model: str, dimension: int,
-        host: str | None = None
+        host: str | None = None,
+        batch_size: int = EmbeddingModel.batch_size,
     ) -> None:
         self.model=model
+        self.batch_size=batch_size
         self._dimension=dimension
         self.client = ollama.AsyncClient(host=host)
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         response = await self.client.embed(
             model=self.model,
             input=texts
@@ -46,8 +59,10 @@ class GigaChatEmbedding(EmbeddingModel):
         credentials: str,
         model: str,
         dimension: int,
+        batch_size: int = EmbeddingModel.batch_size,
     ) -> None:
         self.model = model
+        self.batch_size = batch_size
         self._dimension = dimension
 
         self.client = GigaChat(
@@ -55,7 +70,7 @@ class GigaChatEmbedding(EmbeddingModel):
             verify_ssl_certs=False,
         )
 
-    async def embed(
+    async def _embed_batch(
         self,
         texts: list[str],
     ) -> list[list[float]]:
@@ -77,7 +92,9 @@ class OpenAIEmbedding(EmbeddingModel):
         dimension: int,
         api_key: str | None = None,
         base_url: str | None = None,
+        batch_size: int = EmbeddingModel.batch_size,
     ) -> None:
+        self.batch_size = batch_size
         self.client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -85,7 +102,7 @@ class OpenAIEmbedding(EmbeddingModel):
         self.model = model
         self._dimension = dimension
 
-    async def embed(
+    async def _embed_batch(
         self,
         texts: list[str],
     ) -> list[list[float]]:

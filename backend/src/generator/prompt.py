@@ -14,11 +14,20 @@ CONTEXT='''[Контекст / Context]
 QUESTION='''[Вопрос пользователя / User Query]
         {query}'''
 
+def format_location(d: dict) -> str:
+    pages = d["page_number"]
+    if d.get("page_end") and d["page_end"] != d["page_number"]:
+        pages = f"{d['page_number']}–{d['page_end']}"
+    location = f"{d['doc_id']}, стр. {pages}"
+    if d.get("section_path"):
+        location += f", раздел: {' > '.join(d['section_path'])}"
+    return location
+
 def format_context(docs: list[dict]) -> str:
     if not docs:
         return "(в базе не найдено релевантных документов)"
     return "\n\n".join(
-        f"[Источник {i}] ({d['doc_id']}, стр. {d['page_number']})\n{d['content']}"
+        f"[Источник {i}] ({format_location(d)})\n{d['content']}"
         for i, d in enumerate(docs, 1)
     )
 

@@ -32,7 +32,7 @@ class OllamaLLM(LLM):
             prompt=prompt,
             format=response_format,
         )
-        return response["thinking"]
+        return response["response"]
 
 class GigaChatLLM(LLM):
     def __init__(
