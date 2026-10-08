@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     rrf_k: int = Field(default=60, gt=0)
     vector_weight: float = Field(default=1.0, ge=0)
     bm25_weight: float = Field(default=1.0, ge=0)
+    # переводить вопрос на английский (через LLM) перед BM25: документация английская
+    translate_for_bm25: bool = False
 
     eval_dataset_path: Path = BASE_DIR / "app" / "src" / "evaluation" / "dataset" / "dataset.jsonl"
     upload_dir: Path = BASE_DIR / "data" / "uploads"

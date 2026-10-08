@@ -46,6 +46,7 @@ async def run(
     - use_reranker: использовать реранкер из .env (false — без реранкера)
     - retrieval_mode: vector / bm25 / hybrid, по умолчанию RETRIEVAL_MODE из .env
     - rrf_k / vector_weight / bm25_weight: параметры RRF для hybrid, по умолчанию из .env
+    - translate_for_bm25: переводить вопрос на английский перед BM25, по умолчанию TRANSLATE_FOR_BM25 из .env
     - limit / reranker_limit: сколько чанков ретривить на вопрос (как в /llm/generate);
       с реранкером limit — число кандидатов, reranker_limit — сколько оставить после него;
       для hit@10 нужно не меньше 10
@@ -54,7 +55,7 @@ async def run(
     - strict_version: чанк засчитывается, только если он из той же версии документации
     - retrieval_only: не вызывать LLM и судью, считать только метрики ретривера
     - ids: конкретные вопросы, например ?ids=pgq-001&ids=pgq-002
-    - sample_limit: ограничить число вопросов (для быстрой проверки)
+    - sample_limit: ограничить число вопросов (для быстрой проверки).
     """
     if use_reranker and reranker is None:
         raise HTTPException(400, "Реранкер не настроен: задайте RERANKER_PROVIDER и RERANKER")

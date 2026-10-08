@@ -52,7 +52,7 @@ async def generate(query, session, limit, reranker_limit, llm, embedding_model, 
                    params: RetrievalParams | None = None) -> GenerateResponse:
     similar = await get_similar(
         session=session, query=query, embedding_model=embedding_model, limit=limit, reranker_limit=reranker_limit, reranker=reranker,
-        params=params,
+        params=params, llm=llm,
     )
     response = await llm.generate(
         prompt=build_prompt(similar, query),

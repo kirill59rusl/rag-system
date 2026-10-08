@@ -30,6 +30,9 @@ from src.schemas.llmresponse import Claim
 
 logger = logging.getLogger(__name__)
 
+# верхний предел раундов повтора упавших вопросов в run_eval
+MAX_RETRY_ROUNDS = 10
+
 JUDGE_PROMPT = """Ты — эксперт, оценивающий ответы RAG-системы по технической документации.
 
 Вопрос пользователя:
@@ -250,7 +253,7 @@ async def run_case(
         retrieved = await get_similar(
             query=question, session=session, embedding_model=embedding_model,
             limit=limit, reranker_limit=reranker_limit, reranker=reranker,
-            params=params,
+            params=params, llm=llm,
         )
     else:
         result = await rag_generate(
@@ -398,17 +401,23 @@ async def run_evaluation(
     sem = asyncio.Semaphore(concurrency)
     results = await asyncio.gather(*(worker(case, sem) for case in dataset))
 
-    # второй проход: упавшие вопросы по одному — чаще всего это rate limit провайдера
+    # повторяем упавшие вопросы (чаще всего rate limit провайдера), пока раунд хоть кого-то
+    # чинит; если раунд не починил никого — ошибка, скорее всего, детерминированная
     failed = [i for i, r in enumerate(results) if r is None]
-    if failed:
-        logger.warning("retrying %d failed cases sequentially", len(failed))
-        retry_sem = asyncio.Semaphore(10)
-        retried = await asyncio.gather(*(worker(dataset[i], retry_sem) for i in failed))
+    for round_ in range(1, MAX_RETRY_ROUNDS + 1):
+        if not failed:
+            break
+        logger.warning("retry round %d: %d failed cases", round_, len(failed))
+        retried = await asyncio.gather(*(worker(dataset[i], sem) for i in failed))
         for i, r in zip(failed, retried, strict=True):
             results[i] = r
-        still_failed = [dataset[i]["id"] for i in failed if results[i] is None]
-        if still_failed:
-            logger.error("eval failed after retry: %s", ", ".join(still_failed))
+        still_failed = [i for i in failed if results[i] is None]
+        if len(still_failed) == len(failed):
+            failed = still_failed
+            break
+        failed = still_failed
+    if failed:
+        logger.error("eval failed after retries: %s", ", ".join(dataset[i]["id"] for i in failed))
 
     results = [r for r in results if r is not None]
 
@@ -422,6 +431,7 @@ async def run_evaluation(
                  bm25_weight=params.bm25_weight)
             if params.mode == "hybrid" else {}
         ),
+        translate_for_bm25=params.translate if params.mode != "vector" else None,
         reranker=getattr(reranker, "model", type(reranker).__name__) if reranker else None,
         limit=limit,
         reranker_limit=reranker_limit if reranker else None,

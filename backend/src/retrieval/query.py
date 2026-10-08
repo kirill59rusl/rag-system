@@ -6,12 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.db.database import get_session
+from src.generator.dependencies import get_llm
+from src.generator.llm import LLM
 from src.db.service import find_lexical, find_similar, get_known_versions
 from src.retrieval.dependencies import get_embedding_model, get_reranker
 from src.retrieval.embedding import EmbeddingModel
 from src.retrieval.fusion import rrf
 from src.retrieval.params import RetrievalParams, RetrievalParamsDep
 from src.retrieval.reranking.reranker import Reranker
+from src.retrieval.translate import translate_query
 from src.retrieval.versions import detect_versions
 
 retrieval=APIRouter(prefix="/retrieval", tags=["query"])
@@ -21,13 +24,13 @@ EmbeddingDep = Annotated[EmbeddingModel, Depends(get_embedding_model)]
 
 RerankerDep = Annotated[Reranker | None, Depends(get_reranker)]
 
-async def _find(query, query_embedding, session, limit, version, params):
+async def _find(query, lexical_query, query_embedding, session, limit, version, params):
     if params.mode == "bm25":
-        return await find_lexical(session, query, limit, version)
+        return await find_lexical(session, lexical_query, limit, version)
     if params.mode == "hybrid":
         # одна сессия — запросы последовательно, не через gather
         vector = await find_similar(session, query_embedding, limit, version)
-        lexical = await find_lexical(session, query, limit, version)
+        lexical = await find_lexical(session, lexical_query, limit, version)
         fused = rrf(
             [vector, lexical],
             [params.vector_weight, params.bm25_weight],
@@ -37,20 +40,24 @@ async def _find(query, query_embedding, session, limit, version, params):
     return await find_similar(session, query_embedding, limit, version)
 
 
-async def _search(query, query_embedding, session, limit, reranker_limit, reranker, params, version=None):
+async def _search(query, lexical_query, query_embedding, session, limit, reranker_limit, reranker, params, version=None):
     if reranker is None:
-        return await _find(query, query_embedding, session, limit, version, params)
+        return await _find(query, lexical_query, query_embedding, session, limit, version, params)
     candidates = await _find(
-        query, query_embedding, session, max(reranker_limit, limit), version, params
+        query, lexical_query, query_embedding, session, max(reranker_limit, limit), version, params
     )
     return await reranker.rerank(query, candidates, reranker_limit)
 
 
 async def get_similar(
     query, session, embedding_model, limit, reranker_limit, reranker=None,
-    params: RetrievalParams | None = None,
+    params: RetrievalParams | None = None, llm: LLM | None = None,
 ):
     params = params or RetrievalParams.resolve()
+    # перевод только для лексической части; вектор и реранкер видят исходный вопрос
+    lexical_query = query
+    if params.translate and params.mode != "vector" and llm is not None:
+        lexical_query = await translate_query(llm, query)
     query_embedding = None
     if params.mode != "bm25":
         query_embedding = await embedding_model.embed_one(query)
@@ -58,11 +65,11 @@ async def get_similar(
     if settings.version_filter:
         versions = detect_versions(query, await get_known_versions(session))
     if not versions:
-        return await _search(query, query_embedding, session, limit, reranker_limit, reranker, params)
+        return await _search(query, lexical_query, query_embedding, session, limit, reranker_limit, reranker, params)
 
     per_version = [
         await _search(
-            query, query_embedding, session,
+            query, lexical_query, query_embedding, session,
             _share(limit, len(versions), i), _share(reranker_limit, len(versions), i),
             reranker, params, version,
         )
@@ -84,7 +91,8 @@ async def get_relevant(
     embedding_model: EmbeddingDep,
     reranker: RerankerDep,
     params: RetrievalParamsDep,
+    llm: Annotated[LLM, Depends(get_llm)],
     limit: int = 5,
     reranker_limit: int = 5,
 ):
-    return await get_similar(query,session,embedding_model,limit,reranker_limit,reranker,params)
+    return await get_similar(query,session,embedding_model,limit,reranker_limit,reranker,params,llm)

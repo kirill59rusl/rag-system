@@ -87,6 +87,8 @@ class EvalSummary(BaseModel):
     rrf_k: int | None = None
     vector_weight: float | None = None
     bm25_weight: float | None = None
+    # перевод вопроса для BM25; None — прогон в режиме vector
+    translate_for_bm25: bool | None = None
     # модель реранкера; None — прогон без реранкера
     reranker: str | None = None
     limit: int

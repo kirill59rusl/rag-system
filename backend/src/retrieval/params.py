@@ -12,6 +12,7 @@ class RetrievalParams:
     rrf_k: int
     vector_weight: float
     bm25_weight: float
+    translate: bool
 
     @classmethod
     def resolve(
@@ -20,6 +21,7 @@ class RetrievalParams:
         rrf_k: int | None = None,
         vector_weight: float | None = None,
         bm25_weight: float | None = None,
+        translate: bool | None = None,
     ) -> "RetrievalParams":
         """Не переданные значения берутся из settings (.env)."""
         return cls(
@@ -27,6 +29,7 @@ class RetrievalParams:
             rrf_k=settings.rrf_k if rrf_k is None else rrf_k,
             vector_weight=settings.vector_weight if vector_weight is None else vector_weight,
             bm25_weight=settings.bm25_weight if bm25_weight is None else bm25_weight,
+            translate=settings.translate_for_bm25 if translate is None else translate,
         )
 
 
@@ -35,8 +38,11 @@ def get_retrieval_params(
     rrf_k: Annotated[int | None, Query(gt=0)] = None,
     vector_weight: Annotated[float | None, Query(ge=0)] = None,
     bm25_weight: Annotated[float | None, Query(ge=0)] = None,
+    translate_for_bm25: bool | None = None,
 ) -> RetrievalParams:
-    return RetrievalParams.resolve(retrieval_mode, rrf_k, vector_weight, bm25_weight)
+    return RetrievalParams.resolve(
+        retrieval_mode, rrf_k, vector_weight, bm25_weight, translate_for_bm25
+    )
 
 
 RetrievalParamsDep = Annotated[RetrievalParams, Depends(get_retrieval_params)]
