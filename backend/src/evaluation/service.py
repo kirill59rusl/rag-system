@@ -14,15 +14,18 @@ from src.db.database import async_session_factory
 from src.db.models import Document
 from src.generator.generate import generate as rag_generate
 from src.generator.llm import LLM
+from src.generator.prompt import format_context
 from src.retrieval.query import get_similar
 from src.retrieval.reranking.reranker import Reranker
 from src.schemas.evaluation import (
     EvalCaseResult,
     EvalSummary,
+    FaithfulnessVerdict,
     FragmentMatch,
     GroupStats,
     JudgeVerdict,
 )
+from src.schemas.llmresponse import Claim
 
 logger = logging.getLogger(__name__)
 
@@ -40,19 +43,30 @@ JUDGE_PROMPT = """Ты — эксперт, оценивающий ответы R
 Ответ, сгенерированный системой:
 {generated_answer}
 
-Оцени сгенерированный ответ по двум критериям:
-
-1. verdict — насколько сгенерированный ответ соответствует эталонному по смыслу:
-   - "correct" — ответ верен и содержит всю ключевую информацию из эталона;
-   - "partial" — ответ частично верен, но что-то упущено, неточно или избыточно;
-   - "incorrect" — ответ неверен, противоречит эталону или отвечает не на тот вопрос.
-   Если эталонный ответ говорит, что информации нет в документации, а система тоже
-   отказалась отвечать по существу — это "correct".
-
-2. grounded — false, если в сгенерированном ответе есть утверждения, не подтверждённые
-   эталонным ответом или цитатами (похоже на выдумку/галлюцинацию), иначе true.
+Оцени в поле verdict, насколько сгенерированный ответ соответствует эталонному по смыслу:
+- "correct" — ответ верен и содержит всю ключевую информацию из эталона;
+- "partial" — ответ частично верен, но что-то упущено или неточно;
+- "incorrect" — ответ неверен, противоречит эталону или отвечает не на тот вопрос.
+Если эталонный ответ говорит, что информации нет в документации, а система тоже
+отказалась отвечать по существу — это "correct".
+Дополнительные сведения сверх эталона не снижают оценку, если они не противоречат эталону.
 
 Кратко обоснуй вердикт в поле reasoning (1-2 предложения)."""
+
+FAITHFULNESS_PROMPT = """Ты проверяешь, подтверждаются ли утверждения ответа RAG-системы
+фрагментами документации, которые ей были выданы. Не используй собственные знания:
+утверждение подтверждено, только если оно прямо следует из текста источников.
+
+Источники:
+{context}
+
+Утверждения ответа:
+{claims}
+
+Для каждого утверждения верни объект с полями:
+- claim — номер утверждения;
+- supported — true, если утверждение подтверждается хотя бы одним из источников выше.
+Оцени все утверждения по порядку."""
 
 # фраза отказа из SYSTEM_PROMPT генератора (+ английский вариант, если LLM её перевела)
 _REFUSAL = re.compile(
@@ -183,6 +197,32 @@ async def judge_answer(
     return JudgeVerdict.model_validate_json(raw)
 
 
+async def judge_faithfulness(
+    llm: LLM, claims: list[Claim], retrieved: list[dict]
+) -> FaithfulnessVerdict:
+    prompt = FAITHFULNESS_PROMPT.format(
+        context=format_context(retrieved),
+        claims="\n".join(
+            f"{i}. {c.text}"
+            for i, c in enumerate(claims, 1)
+        ),
+    )
+    raw = await llm.generate(
+        prompt=prompt, response_format=FaithfulnessVerdict.model_json_schema()
+    )
+    return FaithfulnessVerdict.model_validate_json(raw)
+
+
+def faithfulness_score(claims: list[Claim], verdict: FaithfulnessVerdict) -> float | None:
+    """Доля утверждений, подтверждённых контекстом."""
+    checks = {c.claim: c.supported for c in verdict.claims if 1 <= c.claim <= len(claims)}
+    if len(checks) < len(claims):
+        logger.warning("judge checked %d of %d claims", len(checks), len(claims))
+    if not checks:
+        return None
+    return sum(checks.values()) / len(checks)
+
+
 async def run_case(
     case: dict[str, Any],
     session: AsyncSession,
@@ -203,6 +243,7 @@ async def run_case(
     fragments = case["gold_fragments"]
 
     generated_answer = None
+    claims: list[Claim] = []
     if retrieval_only:
         retrieved = await get_similar(
             query=question, session=session, embedding_model=embedding_model,
@@ -220,6 +261,7 @@ async def run_case(
             debug=True,
         )
         generated_answer = result.answer
+        claims = result.claims
         retrieved = [s.model_dump() for s in result.sources]
 
     matches = match_fragments(fragments, retrieved, versions, strict_version)
@@ -244,6 +286,7 @@ async def run_case(
     )
 
     if generated_answer is not None:
+        case_result.refused = bool(_REFUSAL.search(generated_answer))
         verdict = await judge_answer(
             llm=judge,
             question=question,
@@ -251,10 +294,13 @@ async def run_case(
             quotes=[f["quote"] for f in fragments],
             generated_answer=generated_answer,
         )
-        case_result.refused = bool(_REFUSAL.search(generated_answer))
         case_result.verdict = verdict.verdict
-        case_result.grounded = verdict.grounded
         case_result.reasoning = verdict.reasoning
+
+        # отказ без утверждений проверять не на чем — он не входит в faithfulness
+        if claims and not case_result.refused:
+            faithfulness = await judge_faithfulness(judge, claims, retrieved)
+            case_result.faithfulness = faithfulness_score(claims, faithfulness)
 
     return case_result
 
@@ -266,6 +312,7 @@ def _mean(values: list[float]) -> float | None:
 def aggregate(results: list[EvalCaseResult], ks: list[int]) -> GroupStats:
     with_gold = [r for r in results if r.hit is not None]
     judged = [r for r in results if r.verdict is not None]
+    checked = [r for r in results if r.faithfulness is not None]
 
     def at_k(field: str) -> dict[int, float]:
         if not with_gold:
@@ -283,7 +330,7 @@ def aggregate(results: list[EvalCaseResult], ks: list[int]) -> GroupStats:
         refusal_rate=_mean([float(r.refused) for r in judged]),
         accuracy=_mean([float(r.verdict == "correct") for r in judged]),
         partial_rate=_mean([float(r.verdict == "partial") for r in judged]),
-        grounded_rate=_mean([float(r.grounded) for r in judged]),
+        faithfulness=_mean([r.faithfulness for r in checked if r.faithfulness is not None]),
     )
 
 

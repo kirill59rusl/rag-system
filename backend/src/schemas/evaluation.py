@@ -1,12 +1,28 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
+# схемы ответов судьи: strict json_schema (OpenAI/Azure) требует additionalProperties: false
 class JudgeVerdict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     verdict: Literal["correct", "partial", "incorrect"]
-    grounded: bool
     reasoning: str
+
+
+class ClaimCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claim: int
+    # подтверждается хоть каким-то источником из контекста
+    supported: bool
+
+
+class FaithfulnessVerdict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claims: list[ClaimCheck]
 
 
 class FragmentMatch(BaseModel):
@@ -41,8 +57,9 @@ class EvalCaseResult(BaseModel):
     # генерация
     refused: bool | None = None
     verdict: Literal["correct", "partial", "incorrect"] | None = None
-    grounded: bool | None = None
     reasoning: str | None = None
+    # доля утверждений ответа, подтверждённых найденным контекстом; None — отказ или нет утверждений
+    faithfulness: float | None = None
 
 
 class GroupStats(BaseModel):
@@ -57,7 +74,8 @@ class GroupStats(BaseModel):
     refusal_rate: float | None = None
     accuracy: float | None = None
     partial_rate: float | None = None
-    grounded_rate: float | None = None
+    # средняя доля утверждений ответа, подтверждённых найденным контекстом
+    faithfulness: float | None = None
 
 
 class EvalSummary(BaseModel):

@@ -1,3 +1,4 @@
+from itertools import zip_longest
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -35,15 +36,15 @@ async def get_similar(query, session, embedding_model, limit, reranker_limit, re
     if not versions:
         return await _search(query, query_embedding, session, limit, reranker_limit, reranker)
 
-    # несколько версий (вопрос-сравнение) — делим выдачу поровну, чтобы каждая была в контексте
-    results = []
-    for i, version in enumerate(versions):
-        results += await _search(
+    per_version = [
+        await _search(
             query, query_embedding, session,
             _share(limit, len(versions), i), _share(reranker_limit, len(versions), i),
             reranker, version,
         )
-    return results
+        for i, version in enumerate(versions)
+    ]
+    return [d for group in zip_longest(*per_version) for d in group if d is not None]
 
 
 def _share(total, n, i):

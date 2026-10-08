@@ -1,14 +1,17 @@
 # RAG System
 
-Учебный RAG-проект: загружаете PDF, система режет его на чанки, строит эмбеддинги, сохраняет в PostgreSQL (pgvector) и отвечает на вопросы по содержимому с привязкой утверждений к источникам.
+Classic RAG.
+Реализован через FastAPI + PostgreSQL.
+
+Сравнение различных методов улучшения работы классической RAG системы. 
+Валидация на датасете составленного из вопросов по новейшим версиям PostgreSQL. (18 и 19beta)
 
 ## Возможности
 
-- **Загрузка документов.** `POST /documents/upload` сохраняет файл на диск, парсит PDF (с очисткой текста), режет на чанки и индексирует. Статус документа: `pending` → `processing` → `indexed` / `failed`.
-- **Семантический поиск.** `POST /retrieval/search` возвращает top-k ближайших чанков по косинусному расстоянию (pgvector).
-- **Генерация ответа.** `POST /llm/generate` находит релевантные чанки, строит промпт и просит LLM вернуть структурированный JSON: итоговый ответ (`answer`), список утверждений (`claims`), у каждого номера использованных источников, и список `sources` (документ и страница).
-
-> Сейчас парсер поддерживает только PDF.
+- **Загрузка документов.** `POST /documents/upload` сохраняет файл, извлекает текст из PDF (с очисткой), режет на чанки по разделам и индексирует. Версия документации (`Document.version`) берётся из имени файла (`postgresql-18-*.pdf` → `18`). Статус документа: `pending` → `processing` → `indexed` / `failed`.
+- **Поиск.** `POST /retrieval/search` — векторный поиск по косинусному расстоянию (pgvector), опционально с реранкером. Если в вопросе упомянута версия (`PostgreSQL 18`, `18-й`, `в 18 и в 19`), поиск идёт только по документации этой версии; при нескольких версиях выдача делится между ними поровну и чередуется.
+- **Генерация ответа.** `POST /llm/generate` строит промпт из найденных чанков (у каждого указаны версия, страницы и раздел) и просит LLM вернуть структурированный JSON: ответ (`answer`), атомарные утверждения (`claims`) со ссылками на источники и список `sources`.
+- **Оценка качества.** `POST /eval/run` прогоняет датасет из 150 вопросов через пайплайн и считает метрики поиска и генерации (LLM-судья).
 
 ## Стек
 
@@ -16,119 +19,223 @@
 |---|---|
 | API | FastAPI, Uvicorn, Pydantic |
 | БД | PostgreSQL 16 + pgvector, SQLAlchemy 2 (async, asyncpg), Alembic |
-| Ингест | pypdf, langchain-text-splitters (чанки 1000 символов, перекрытие 200) |
-| Модели | emb: voyage-4, llm: Deepseek v4.1 Flash |
+| Ингест | pypdf, langchain-text-splitters |
+| Модели | эмбеддинги: `voyageai/voyage-4` (1024), LLM: `deepseek/deepseek-v4.1-flash`, реранкер: `voyageai/rerank-3-lite`, судья: `openai/gpt-6-luna-pro` |
+| Провайдеры | OpenAI-совместимый API (RouterAI) |
+| Клиент | Vite, vanilla JS |
 | Инфраструктура | Docker Compose, uv |
 
 ## Архитектура
 
 ```
-upload ─► parser ─► chunker ─► embedding ─► Postgres (chunks + vector)
+upload ─► parser ─► chunker ─► embedding ─► Postgres
 
-query ─► embedding ─► top-k search ─► prompt ─► LLM ─► answer + claims + sources
+query ─► embedding ─► vector search ─► reranker ─► prompt ─► LLM
+                                                                                        
 ```
+
+**Чанкинг.** Текст делится на разделы по оглавлению PDF (outline), а если его нет — по заголовкам в тексте. Каждый раздел режется `RecursiveCharacterTextSplitter` на чанки до 1500 символов с перекрытием 200; слишком короткие куски (< 100 символов) склеиваются с соседними. В эмбеддинг идёт текст чанка с путём раздела в начале (`Part III > Chapter 19 > 19.4.5. I/O`), в БД хранится чистый текст и метаданные: `page_number`, `page_end`, `section`, `section_path`.
+
+**Поиск по версиям** Версия определяется регуляркой, сверяется со списком версий в бд `WHERE documents.version==19`
 
 ```
 .
 ├── compose.yaml
-├── docker/postgres/init.sql      
+├── .env.example
+├── docker/postgres/init.sql                      
 ├── backend/
 │   ├── Dockerfile
 │   ├── alembic.ini
 │   └── src/
-│       ├── main.py               # приложение FastAPI
-│       ├── core/config.py        # настройки (pydantic-settings)
-│       ├── db/                   # модели, сессия, миграции, запросы
-│       ├── evaluation/           # валидация
-│       ├── ingestion/            # загрузка, парсинг, чанкинг, пайплайн
-│       ├── retrieval/            # эмбеддинги и поиск
-│       ├── generator/            # промпт, LLM-клиент, эндпоинт генерации
-│       └── schemas/              # Pydantic-схемы
-└── frontend/                     # пока пусто
+│       ├── main.py                   # приложение FastAPI
+│       ├── core/config.py            # настройки (pydantic-settings)
+│       ├── db/                       # модели, сессия, миграции, запросы
+│       ├── ingestion/                # загрузка, парсинг, чанкинг, пайплайн
+│       ├── retrieval/                # эмбеддинги, поиск, определение версии, реранкер
+│       ├── generator/                # промпт, LLM-клиенты, эндпоинт генерации
+│       ├── evaluation/               # датасет, метрики, LLM-судья, эндпоинт /eval/run
+│       └── schemas/                  # Pydantic-схемы
+└── frontend/                         # клиент на Vite
 ```
 
 ## Быстрый старт
 
-
-**1. Запустите проект**
-
 ```bash
+cp .env.example .env        # заполнить OPENAI_API_KEY 
 docker compose up -d --build
 ```
 
+По поводу ключа: как от OpenAI, так и от совместимого сервиса. Я пользовался моделями предоставляемыми RouterAI.
+Также Reranker представлен через API RouterAI. Ключ там используется тот же из переменной окружения OPENAI_API_KEY.
 
-**2. Документация fastapi**
+Интерактивная документация: http://localhost:8000/docs
 
-Интерактивная документация: <http://localhost:8000/docs>
-
-## Использование
+Клиент:
 
 ```bash
-# 1. Загрузить PDF
-curl -F "file=@document.pdf" http://localhost:8000/documents/upload
-
-# 2. Поиск релевантных чанков
-curl -X POST "http://localhost:8000/retrieval/search?query=что такое RAG&limit=5"
-
-# 3. Ответ на вопрос
-curl -X POST "http://localhost:8000/llm/generate?query=что такое RAG&limit=5"
+cd frontend
+npm install
+npm run dev                 # http://localhost:5173, /api проксируется на localhost:8000
 ```
 
-Пример ответа `/llm/generate`:
+## API
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| `POST` | `/documents/upload` | загрузка и индексация документа |
+| `POST` | `/retrieval/search` | поиск чанков (`query`, `limit`, `reranker_limit`) |
+| `POST` | `/llm/generate` | ответ на вопрос (`query`, `limit`, `reranker_limit`, `debug`) |
+| `GET` | `/chunks` | список чанков (`document_ids`, `limit`) |
+| `POST` | `/eval/run` | прогон оценки на датасете |
+| `GET` | `/health`, `/ready` | проверка API и подключения к БД |
+
+С реранкером `limit` — число кандидатов из векторного поиска, `reranker_limit` — сколько оставить после реранкера. `debug=true` добавляет в `sources` текст чанка и расстояние.
+
+```bash
+curl -X POST "http://localhost:8000/llm/generate?query=Какое значение io_method используется по умолчанию в PostgreSQL 18?&limit=20&reranker_limit=10"
+```
 
 ```json
 {
-  "answer": "Согласно руководству, чтобы включить станок, необходимо нажать зелёную кнопку «Пуск», расположенную на шкафу управления. Перед этим по пошаговой инструкции следует установить режущий инструмент на шпиндель, отключив напряжение станка. После включения станка нужно включить компьютер и запустить программу NC Studio.",
+  "answer": "В PostgreSQL 18 значение io_method по умолчанию — worker.",
   "claims": [
     {
-      "text": "Для включения станка нужно нажать кнопку «Пуск» зелёного цвета, расположенную на шкафу управления.",
-      "sources": [
-        1
-      ]
-    }  
-    ...
+      "text": "Значение io_method по умолчанию — worker.",
+      "sources": [1]
+    }
   ],
   "sources": [
     {
       "id": 1,
-      "chunk_id": "74f35463-57aa-4182-90c4-c5d946f6c2a0",
-      "doc_id": "37bf11ec-d142-4f88-aab7-3e72d5f24988",
-      "chunk_index": 41,
-      "page_number": 29,
-      "used": true
-    }...
+      "chunk_id": "f8743cb5-ae48-4866-9ba8-df71af8479ad",
+      "doc_id": "cc02b4c7-e396-475f-88cf-5ef2e8e4d1f3",
+      "chunk_index": 1529,
+      "page_number": 690,
+      "page_end": 690,
+      "section": "19.4.5. I/O",
+      "section_path": [
+        "Part III. Server Administration",
+        "Chapter 19. Server Configuration",
+        "19.4. Resource Consumption",
+        "19.4.5. I/O"
+      ],
+      "used": true,
+      "version": "18"
+    }
   ]
 }
 ```
 
 ## Конфигурация
 
-адрес бд в `/backend/.env`
-
-остальные настройки, такие как используемые модели, размер векторного пространства можно найти в `/backend/core/config`
+Настройки читаются из `.env` в корне репозитория ([core/config.py](backend/src/core/config.py)); в Docker Compose — из секции `x-backend-env` в `compose.yaml`.
 
 
-## Локальная разработка (backend на хосте)
+## Оценка
+
+### Датасет
+
+Сгенерирован LLM. + небольшая ручная проверка
+
+[evaluation/dataset/dataset.jsonl](backend/src/evaluation/dataset/dataset.jsonl) — 150 вопросов по документации PostgreSQL 18 и 19, на русском и английском, с эталонным ответом и цитатами из документации (`gold_fragments`).
+
+| Категория | Вопросов | Что проверяет |
+|---|---:|---|
+| `pg18` | 40 | вопросы по документации 18 |
+| `pg19` | 40 | вопросы по документации 19 |
+| `cross` | 50 | сравнение версий: нужно найти фрагменты из обеих |
+| `unanswerable` | 20 | ответа в документации нет — ожидается отказ |
+
+### Запуск
+
+```bash
+# полный прогон
+curl -X POST "http://localhost:8000/eval/run?limit=20&reranker_limit=10"
+
+# только метрики поиска, без LLM и судьи
+curl -X POST "http://localhost:8000/eval/run?retrieval_only=true&limit=20&reranker_limit=10"
+
+# подмножество
+curl -X POST "http://localhost:8000/eval/run?categories=cross&lang=en&sample_limit=10"
+```
+
+### Метрики
+
+| Метрика | Что считает |
+|---|---|
+| `hit@k` | хотя бы один эталонный фрагмент в top-k |
+| `recall@k` | доля эталонных фрагментов в top-k |
+| `all_found@k` | все эталонные фрагменты в top-k |
+| `mrr` | 1 / позиция первого найденного фрагмента |
+| `section_recall`, `page_recall` | найден ли нужный раздел / страница |
+| `accuracy`, `partial_rate` | вердикт судьи по сравнению с эталоном: correct / partial / incorrect |
+| `refusal_rate` | доля отказов («нет информации») |
+| `faithfulness` | доля утверждений ответа (`claims`), подтверждённых найденным контекстом; проверяется судьёй без эталона, отказы не учитываются |
+
+## Результаты
+
+Все прогоны: вопросы на русском (`lang=ru`). `k` в столбцах `hit@ctx` и `all_found@ctx` — число чанков, переданных в LLM.
+Важно: accuracy между таблицами не сравнимы, так как менял метод оценки в промпте. внутри таблиц можно сравнивать.
+
+### Версии документации
+
+Судья v1, векторный поиск top-5, без реранкера.
+
+| Шаг | hit@1 | hit@5 | all_found@5 | MRR | Accuracy | Partial | Refusal |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline | 56.9% | 83.8% | 70.8% | 0.671 | 62.0% | 27.3% | 25.3% |
+| + версия в промпте | 56.9% | 83.8% | 70.8% | 0.671 | 66.0% | 30.0% | 17.3% |
+| + фильтр по версии в поиске | 59.2% | 85.4% | 66.9% | 0.688 | **72.0%** | 24.7% | 18.7% |
+
+### Размер контекста и реранкер
+
+Судья v2 (без штрафа за верные детали сверх эталона, с `faithfulness`), фильтр по версии включён.
+
+| Поиск | Чанков в LLM | hit@1 | hit@ctx | all_found@ctx | MRR | Accuracy | Partial | Refusal | Faithfulness |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Dense top-5 | 5 | 59.8% | 85.0% | 66.9% | 0.694 | 81.6% | 15.6% | 18.4% | 98.9% |
+| Dense top-10 | 10 | 58.9% | 94.6% | 81.4% | 0.701 | 89.3% | 8.1% | 16.1% | 99.4% |
+| Dense 10 → rerank 5 | 5 | 78.5% | 93.1% | 78.5% | 0.842 | 83.3% | 12.7% | 17.3% | 99.5% |
+| Dense 20 → rerank 10 ¹ | 10 | **80.0%** | **96.9%** | **90.8%** | **0.858** | **92.0%** | **6.0%** | 14.0% | 99.8% |
+
+¹ с чередованием версий в вопросах-сравнениях.
+
+### Лучшая конфигурация по категориям
+
+Dense 20 → rerank 10, судья v2.
+
+| Категория | Вопросов | hit@1 | all_found@10 | MRR | Accuracy | Refusal | Faithfulness |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `pg18` | 40 | 87.5% | 97.5% | 0.919 | 97.5% | 0.0% | 100.0% |
+| `pg19` | 40 | 97.5% | 100.0% | 0.988 | 92.5% | 0.0% | 100.0% |
+| `cross` | 50 | 60.0% | 78.0% | 0.706 | 84.0% | 4.0% | 99.4% |
+| `unanswerable` | 20 | — | — | — | 100.0% | 95.0% | 100.0% |
+
+### Вопросы-сравнения (`cross`)
+
+| Шаг | Судья | all_found@ctx | Accuracy | Refusal |
+|---|---|---:|---:|---:|
+| Baseline | v1 | 52.0% | 32.0% | 34.0% |
+| + версия в промпте | v1 | 52.0% | 40.0% | 12.0% |
+| + фильтр по версии в поиске | v1 | 38.0% | 50.0% | 14.0% |
+| Dense top-5 | v2 | 40.0% | 64.0% | 14.0% |
+| Dense top-10 | v2 | 64.0% | 80.0% | 8.0% |
+| Dense 10 → rerank 5 | v2 | 58.0% | 68.0% | 12.0% |
+| Dense 20 → rerank 10 | v2 | **78.0%** | **84.0%** | **4.0%** |
+
+
+## Локальная разработка
 
 ```bash
 docker compose up -d postgres
 
 cd backend
-cp .env.example .env        # DATABASE_URL с localhost
 uv sync
 uv run alembic upgrade head
 uv run uvicorn src.main:app --reload
 ```
 
-Тесты и линтеры:
-
-```bash
-uv run pytest
-uv run ruff check .
-uv run mypy src
-```
-
-> `test_ready` требует запущенного Postgres.
+`.env` в корне репозитория должен указывать на `localhost:5432` (как в `.env.example`). Для запуска оценки вне контейнера нужен `EVAL_DATASET_PATH=src/evaluation/dataset/dataset.jsonl`.
 
 ## Миграции
 
@@ -137,53 +244,3 @@ uv run alembic revision --autogenerate -m "описание"
 uv run alembic upgrade head
 uv run alembic downgrade -1
 ```
-
-##
-
-результаты:
-
-baseline( retrieval limit = 3 )
-  "correct": 32,
-  "partial": 15,
-  "incorrect": 3,
-  "accuracy": 0.64,
-  "grounded_rate": 0.7,
-  "avg_page_recall": 0.9270833333333334,
-  "avg_text_recall": 0.90625
-
-baseline( retrieval limit = 5 )
-  "correct": 32,
-  "partial": 17,
-  "incorrect": 1,
-  "accuracy": 0.64,
-  "grounded_rate": 0.72,
-  "avg_page_recall": 0.96875,
-  "avg_text_recall": 0.96875,
-
-reranker limit=10  reranker_limit=3
-  "total": 50,
-  "correct": 31,
-  "partial": 18,
-  "incorrect": 1,
-  "accuracy": 0.62,
-  "grounded_rate": 0.76,
-  "avg_page_recall": 1,
-  "avg_text_recall": 1,
-  
-reranker 10 5
-  "total": 50,
-  "correct": 35,
-  "partial": 15,
-  "incorrect": 0,
-  "accuracy": 0.7,
-  "grounded_rate": 0.72,
-  "avg_page_recall": 1,
-  "avg_text_recall": 1,
-
-| Retrieval | Accuracy | Grounded | Page Recall | Text Recall |
-|---|---:|---:|---:|---:|
-| Dense top-3 | 64% | 70% | 92.7% | 90.6% |
-| Dense top-5 | 64% | 72% | 96.9% | 96.9% |
-| Rerank 10 → 3 | 62% | 76% | 100% | 100% |
-| Rerank 10 → 5 | **70%** | 72% | **100%** | **100%** |
-\
