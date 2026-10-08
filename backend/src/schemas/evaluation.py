@@ -82,6 +82,11 @@ class EvalSummary(BaseModel):
     lang: str
     strict_version: bool
     retrieval_only: bool
+    retrieval_mode: str
+    # параметры RRF; None — прогон не в режиме hybrid
+    rrf_k: int | None = None
+    vector_weight: float | None = None
+    bm25_weight: float | None = None
     # модель реранкера; None — прогон без реранкера
     reranker: str | None = None
     limit: int

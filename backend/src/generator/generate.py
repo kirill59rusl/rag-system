@@ -9,6 +9,7 @@ from src.generator.dependencies import get_llm
 from src.generator.llm import LLM
 from src.generator.prompt import build_prompt
 from src.retrieval.dependencies import get_reranker
+from src.retrieval.params import RetrievalParams
 from src.retrieval.query import EmbeddingDep, get_similar
 from src.retrieval.reranking.reranker import Reranker
 from src.schemas.llmresponse import Claim, GenerateResponse, LLMResponse, Source
@@ -32,7 +33,9 @@ def build_sources(similar, used_ids, with_content: bool) -> list[Source]:
             section=d.get("section"),
             section_path=d.get("section_path") or [],
             content=d["content"] if with_content else None,
-            distance=d["distance"] if with_content else None,
+            distance=d.get("distance") if with_content else None,
+            bm25_score=d.get("bm25_score") if with_content else None,
+            rrf_score=d.get("rrf_score") if with_content else None,
             used=(i in used_ids),
             version=d.get("version"),
         ))
@@ -45,9 +48,11 @@ def clean_claims(claims: list[Claim], n_sources: int) -> list[Claim]:
     ]
 
 
-async def generate(query, session, limit, reranker_limit, llm, embedding_model, reranker, debug=False) -> GenerateResponse:
+async def generate(query, session, limit, reranker_limit, llm, embedding_model, reranker, debug=False,
+                   params: RetrievalParams | None = None) -> GenerateResponse:
     similar = await get_similar(
-        session=session, query=query, embedding_model=embedding_model, limit=limit, reranker_limit=reranker_limit, reranker=reranker
+        session=session, query=query, embedding_model=embedding_model, limit=limit, reranker_limit=reranker_limit, reranker=reranker,
+        params=params,
     )
     response = await llm.generate(
         prompt=build_prompt(similar, query),

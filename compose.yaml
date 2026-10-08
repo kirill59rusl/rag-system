@@ -19,13 +19,27 @@ x-backend-env: &backend-env
   RERANKER_PROVIDER: ${RERANKER_PROVIDER:-}
   RERANKER: ${RERANKER:-}
 
+  RETRIEVAL_MODE: ${RETRIEVAL_MODE:-vector}
+  RRF_K: ${RRF_K:-60}
+  VECTOR_WEIGHT: ${VECTOR_WEIGHT:-1.0}
+  BM25_WEIGHT: ${BM25_WEIGHT:-1.0}
+
   UPLOAD_DIR: /app/data/uploads
 
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: paradedb/paradedb:0.26.0-pg16
     container_name: rag-postgres
+    # в уже инициализированном томе ParadeDB сам не пропишет preload;
+    # join custom scan выключен: chunks джойнятся с documents без BM25-индекса,
+    # и ParadeDB пишет WARNING на каждый запрос
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_search
+      - -c
+      - paradedb.enable_join_custom_scan=off
     environment:
       POSTGRES_DB: rag
       POSTGRES_USER: postgres

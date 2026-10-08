@@ -15,6 +15,7 @@ from src.db.models import Document
 from src.generator.generate import generate as rag_generate
 from src.generator.llm import LLM
 from src.generator.prompt import format_context
+from src.retrieval.params import RetrievalParams
 from src.retrieval.query import get_similar
 from src.retrieval.reranking.reranker import Reranker
 from src.schemas.evaluation import (
@@ -237,6 +238,7 @@ async def run_case(
     ks: list[int],
     strict_version: bool,
     retrieval_only: bool,
+    params: RetrievalParams,
 ) -> EvalCaseResult:
     question = case[f"question_{lang}"]
     golden_answer = case[f"answer_{lang}"]
@@ -248,6 +250,7 @@ async def run_case(
         retrieved = await get_similar(
             query=question, session=session, embedding_model=embedding_model,
             limit=limit, reranker_limit=reranker_limit, reranker=reranker,
+            params=params,
         )
     else:
         result = await rag_generate(
@@ -259,6 +262,7 @@ async def run_case(
             reranker_limit=reranker_limit,
             embedding_model=embedding_model,
             debug=True,
+            params=params,
         )
         generated_answer = result.answer
         claims = result.claims
@@ -355,26 +359,19 @@ async def run_evaluation(
     ks: list[int] | None = None,
     strict_version: bool = False,
     retrieval_only: bool = False,
-    categories: list[str] | None = None,
-    question_types: list[str] | None = None,
-    difficulties: list[str] | None = None,
+    params: RetrievalParams | None = None,
     ids: list[str] | None = None,
     sample_limit: int | None = None,
     concurrency: int=10,
 ) -> EvalSummary:
     ks = sorted(ks or [1, 3, 5, 10])
+    params = params or RetrievalParams.resolve()
 
     
     dataset = load_dataset()
 
     if ids:
         dataset = [c for c in dataset if c["id"] in ids]
-    if categories:
-        dataset = [c for c in dataset if c["category"] in categories]
-    if question_types:
-        dataset = [c for c in dataset if c["question_type"] in question_types]
-    if difficulties:
-        dataset = [c for c in dataset if c["difficulty"] in difficulties]
     if sample_limit:
         dataset = dataset[:sample_limit]
 
@@ -382,15 +379,14 @@ async def run_evaluation(
 
     versions = await load_document_versions(session)
 
-    sem=asyncio.Semaphore(concurrency)
-    async def worker(case):
+    async def worker(case, sem):
         nonlocal done
         async with sem:
             try:
                 async with async_session_factory() as case_session:
                     res = await run_case(
                             case, case_session, llm, judge, embedding_model, reranker, limit, reranker_limit,
-                            versions, lang, ks, strict_version, retrieval_only,
+                            versions, lang, ks, strict_version, retrieval_only, params,
                     )
             except Exception:
                 logger.exception("eval failed: %s", case["id"])
@@ -399,12 +395,33 @@ async def run_evaluation(
         logger.info("eval %d/%d: %s", done, len(dataset), case["id"])
         return res
 
-    results = [r for r in await asyncio.gather(*map(worker, dataset)) if r is not None]
+    sem = asyncio.Semaphore(concurrency)
+    results = await asyncio.gather(*(worker(case, sem) for case in dataset))
+
+    # второй проход: упавшие вопросы по одному — чаще всего это rate limit провайдера
+    failed = [i for i, r in enumerate(results) if r is None]
+    if failed:
+        logger.warning("retrying %d failed cases sequentially", len(failed))
+        retry_sem = asyncio.Semaphore(10)
+        retried = await asyncio.gather(*(worker(dataset[i], retry_sem) for i in failed))
+        for i, r in zip(failed, retried, strict=True):
+            results[i] = r
+        still_failed = [dataset[i]["id"] for i in failed if results[i] is None]
+        if still_failed:
+            logger.error("eval failed after retry: %s", ", ".join(still_failed))
+
+    results = [r for r in results if r is not None]
 
     return EvalSummary(
         lang=lang,
         strict_version=strict_version,
         retrieval_only=retrieval_only,
+        retrieval_mode=params.mode,
+        **(
+            dict(rrf_k=params.rrf_k, vector_weight=params.vector_weight,
+                 bm25_weight=params.bm25_weight)
+            if params.mode == "hybrid" else {}
+        ),
         reranker=getattr(reranker, "model", type(reranker).__name__) if reranker else None,
         limit=limit,
         reranker_limit=reranker_limit if reranker else None,

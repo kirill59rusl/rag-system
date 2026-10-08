@@ -155,8 +155,11 @@ curl -X POST "http://localhost:8000/eval/run?limit=20&reranker_limit=10"
 # только метрики поиска, без LLM и судьи
 curl -X POST "http://localhost:8000/eval/run?retrieval_only=true&limit=20&reranker_limit=10"
 
-# подмножество
-curl -X POST "http://localhost:8000/eval/run?categories=cross&lang=en&sample_limit=10"
+# режим поиска: vector / bm25 / hybrid (по умолчанию RETRIEVAL_MODE из .env)
+curl -X POST "http://localhost:8000/eval/run?retrieval_only=true&retrieval_mode=hybrid&bm25_weight=0.5"
+
+# быстрая проверка на части датасета
+curl -X POST "http://localhost:8000/eval/run?lang=en&sample_limit=10"
 ```
 
 ### Метрики

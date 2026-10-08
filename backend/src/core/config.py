@@ -1,7 +1,10 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+RetrievalMode = Literal["vector", "bm25", "hybrid"]
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -29,6 +32,13 @@ class Settings(BaseSettings):
 
     # искать только в версиях документации, упомянутых в вопросе
     version_filter: bool = True
+
+    # vector — косинусная близость эмбеддингов, bm25 — лексический поиск ParadeDB,
+    # hybrid — оба списка (по limit кандидатов), объединённые через RRF
+    retrieval_mode: RetrievalMode = "vector"
+    rrf_k: int = Field(default=60, gt=0)
+    vector_weight: float = Field(default=1.0, ge=0)
+    bm25_weight: float = Field(default=1.0, ge=0)
 
     eval_dataset_path: Path = BASE_DIR / "app" / "src" / "evaluation" / "dataset" / "dataset.jsonl"
     upload_dir: Path = BASE_DIR / "data" / "uploads"

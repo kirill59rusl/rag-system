@@ -5,7 +5,7 @@ from uuid import UUID
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -86,6 +86,29 @@ async def find_similar(
                 for chunk,version, dist in rows]
 
     return result
+
+async def find_lexical(
+    session: AsyncSession,
+    query: str,
+    limit: int,
+    version: str | None = None,
+) -> list[dict]:
+    # ||| — совпадение хотя бы одного токена запроса, токенизация как в BM25-индексе
+    score = func.pdb.score(Chunk.id)
+
+    chunks = (
+        select(Chunk, Document.version, score)
+        .join(Document, Chunk.document_id == Document.id)
+        .where(Chunk.content.op("|||")(query))
+        .order_by(score.desc(), Chunk.id)
+        .limit(limit)
+    )
+    if version is not None:
+        chunks = chunks.where(Document.version == version)
+
+    rows = (await session.execute(chunks)).all()
+    return [{**chunk.as_dict(), "version": version, "bm25_score": float(s)}
+            for chunk, version, s in rows]
 
 async def get_known_versions(session: AsyncSession) -> set[str]:
     rows = await session.scalars(

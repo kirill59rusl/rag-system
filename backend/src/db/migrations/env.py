@@ -36,6 +36,13 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# индексы, созданные в миграциях руками и не описанные в моделях
+MANUAL_INDEXES = {"chunks_bm25_idx"}
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    return not (type_ == "index" and name in MANUAL_INDEXES)
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -52,6 +59,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -61,7 +69,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

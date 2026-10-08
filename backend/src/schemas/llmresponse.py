@@ -22,6 +22,8 @@ class Source(BaseModel):
     section_path: list[str] = Field(default_factory=list)
     content: str | None = None
     distance: float | None = None
+    bm25_score: float | None = None
+    rrf_score: float | None = None
     used: bool = False
     version: str | None = None
 
