@@ -52,7 +52,9 @@ async def _search(query, lexical_query, query_embedding, session, limit, reranke
 async def get_similar(
     query, session, embedding_model, limit, reranker_limit, reranker=None,
     params: RetrievalParams | None = None, llm: LLM | None = None,
+    versions: list[str] | None = None,
 ):
+    """versions: None — определить по тексту вопроса, [] — искать по всем версиям."""
     params = params or RetrievalParams.resolve()
     # перевод только для лексической части; вектор и реранкер видят исходный вопрос
     lexical_query = query
@@ -61,9 +63,10 @@ async def get_similar(
     query_embedding = None
     if params.mode != "bm25":
         query_embedding = await embedding_model.embed_one(query)
-    versions = []
-    if settings.version_filter:
-        versions = detect_versions(query, await get_known_versions(session))
+    if versions is None:
+        versions = []
+        if settings.version_filter:
+            versions = detect_versions(query, await get_known_versions(session))
     if not versions:
         return await _search(query, lexical_query, query_embedding, session, limit, reranker_limit, reranker, params)
 

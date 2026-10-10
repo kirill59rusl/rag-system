@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from src.agentic.router import agent
 from src.db.database import get_session
 from src.evaluation.chunks import chunks
 from src.evaluation.router import evaluation
@@ -19,6 +20,7 @@ app.include_router(retrieval)
 app.include_router(llm)
 app.include_router(chunks)
 app.include_router(evaluation)
+app.include_router(agent)
 
 @app.get("/health")
 async def health() -> dict[str, str]:

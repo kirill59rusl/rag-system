@@ -30,7 +30,6 @@ from src.schemas.llmresponse import Claim
 
 logger = logging.getLogger(__name__)
 
-# верхний предел раундов повтора упавших вопросов в run_eval
 MAX_RETRY_ROUNDS = 10
 
 JUDGE_PROMPT = """Ты — эксперт, оценивающий ответы RAG-системы по технической документации.
@@ -72,7 +71,6 @@ FAITHFULNESS_PROMPT = """Ты проверяешь, подтверждаются
 - supported — true, если утверждение подтверждается хотя бы одним из источников выше.
 Оцени все утверждения по порядку."""
 
-# фраза отказа из SYSTEM_PROMPT генератора (+ английский вариант, если LLM её перевела)
 _REFUSAL = re.compile(
     r"нет информации|no information|does not contain information|not contain any information",
     re.IGNORECASE,
@@ -80,7 +78,6 @@ _REFUSAL = re.compile(
 
 _VERSION_IN_FILENAME = re.compile(r"postgresql-(\d+)", re.IGNORECASE)
 
-# доля цитаты с любого края, достаточная для попадания (цитату мог разрезать чанкер)
 EDGE_FRACTION = 0.6
 
 
@@ -128,7 +125,6 @@ def match_fragments(
 
     result = []
     for fragment in fragments:
-        # места, где этот текст есть в документации: основное и дубль в другой версии
         locations = [fragment]
         if not strict_version and fragment.get("also_in_other_version"):
             locations.append(fragment["also_in_other_version"])
@@ -304,7 +300,6 @@ async def run_case(
         case_result.verdict = verdict.verdict
         case_result.reasoning = verdict.reasoning
 
-        # отказ без утверждений проверять не на чем — он не входит в faithfulness
         if claims and not case_result.refused:
             faithfulness = await judge_faithfulness(judge, claims, retrieved)
             case_result.faithfulness = faithfulness_score(claims, faithfulness)
@@ -401,8 +396,6 @@ async def run_evaluation(
     sem = asyncio.Semaphore(concurrency)
     results = await asyncio.gather(*(worker(case, sem) for case in dataset))
 
-    # повторяем упавшие вопросы (чаще всего rate limit провайдера), пока раунд хоть кого-то
-    # чинит; если раунд не починил никого — ошибка, скорее всего, детерминированная
     failed = [i for i, r in enumerate(results) if r is None]
     for round_ in range(1, MAX_RETRY_ROUNDS + 1):
         if not failed:
